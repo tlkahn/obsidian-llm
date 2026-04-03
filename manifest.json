@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-llm",
+  "name": "LLM",
+  "version": "0.1.0",
+  "minAppVersion": "0.15.0",
+  "description": "Call LLMs directly from your notes via WASM — prompt dialog and template processing",
+  "author": "",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

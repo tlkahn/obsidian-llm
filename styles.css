@@ -1,0 +1,69 @@
+/* Question bar (CM6 panel) */
+.llm-prompt-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+}
+
+.llm-prompt-bar-input {
+    flex: 1;
+    resize: none;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    font-size: var(--font-ui-small);
+}
+
+.llm-prompt-bar-input:focus {
+    border-color: var(--interactive-accent);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+.llm-prompt-bar-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.llm-prompt-bar-submit {
+    padding: 4px 12px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-ui-smaller);
+}
+
+.llm-prompt-bar-cancel {
+    padding: 4px 12px;
+    background-color: var(--background-modifier-hover);
+    color: var(--text-muted);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: var(--font-ui-smaller);
+}
+
+/* Streaming indicator */
+.llm-streaming-indicator {
+    display: inline-block;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.llm-streaming-indicator::after {
+    content: "▋";
+    animation: llm-blink 1s step-end infinite;
+}
+
+@keyframes llm-blink {
+    50% { opacity: 0; }
+}
