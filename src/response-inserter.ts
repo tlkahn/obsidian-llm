@@ -38,6 +38,26 @@ export class CalloutInserter {
     }
 }
 
+export class StreamingTemplateReplacer {
+    private editor: Editor;
+    private startOffset: number;
+    private insertedLength: number = 0;
+
+    constructor(editor: Editor, charStart: number, charEnd: number) {
+        this.editor = editor;
+        const from = editor.offsetToPos(charStart);
+        const to = editor.offsetToPos(charEnd);
+        editor.replaceRange("", from, to);
+        this.startOffset = charStart;
+    }
+
+    appendChunk(chunk: string): void {
+        const insertPos = this.editor.offsetToPos(this.startOffset + this.insertedLength);
+        this.editor.replaceRange(chunk, insertPos);
+        this.insertedLength += chunk.length;
+    }
+}
+
 export function replaceTemplateBlock(
     editor: Editor,
     charStart: number,

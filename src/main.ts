@@ -15,7 +15,7 @@ import { showQuestionBar } from "./question-bar";
 import { formatLlmPrompt } from "./prompt-formatter";
 import { parseTemplates } from "./template-parser";
 import { extractContext } from "./context-extractor";
-import { CalloutInserter, replaceTemplateBlock } from "./response-inserter";
+import { CalloutInserter, StreamingTemplateReplacer } from "./response-inserter";
 
 export default class LlmPlugin extends Plugin {
     settings: PluginSettings = DEFAULT_SETTINGS;
@@ -169,11 +169,10 @@ export default class LlmPlugin extends Plugin {
             });
 
             try {
-                let response = "";
+                const replacer = new StreamingTemplateReplacer(editor, tmpl.charStart, tmpl.charEnd);
                 await this.bridge.promptStreaming(prompt, systemPrompt, options, (chunk: string) => {
-                    response += chunk;
+                    replacer.appendChunk(chunk);
                 });
-                replaceTemplateBlock(editor, tmpl.charStart, tmpl.charEnd, response);
                 processed++;
             } catch (e: any) {
                 new Notice(`LLM Error processing template: ${e.message}`);

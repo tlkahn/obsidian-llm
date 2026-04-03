@@ -37,7 +37,7 @@ Some more notes here...
 {{llm: suggest three follow-up questions based on this section}}
 ```
 
-Then run **LLM: Process Templates** from the command palette. Each template block is replaced with the LLM's response, using the surrounding text as context.
+Then run **LLM: Process Templates** from the command palette. Each template block is replaced live as the LLM responds — you see text streaming in, just like the Ask Question callout. Surrounding text is used as context.
 
 Templates inside fenced code blocks are ignored.
 
@@ -84,7 +84,7 @@ The plugin works with any OpenAI-compatible API. Set the **Base URL** to use pro
 ```bash
 npm install
 npm run dev          # esbuild watch mode
-npm test             # run 35 tests
+npm test             # run 40 tests
 npm run test:watch   # vitest watch mode
 npm run build        # production build (tsc + esbuild)
 ```
@@ -101,7 +101,7 @@ src/
   context-extractor.ts Extract surrounding paragraphs for context
   prompt-formatter.ts  Assemble prompt from question + context + metadata
   question-bar.ts      CodeMirror 6 panel for question input
-  response-inserter.ts Insert responses into the editor
+  response-inserter.ts Streaming response insertion (callouts + templates)
   __tests__/           Test files (vitest)
 ```
 

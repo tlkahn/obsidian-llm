@@ -14,8 +14,8 @@ src/
   context-extractor.ts Pure fn: extract surrounding paragraphs, exclude template text
   prompt-formatter.ts  Pure fn: question + context + filePath → prompt string
   question-bar.ts      CM6 panel for question input (Cmd/Ctrl+Enter submit, Esc cancel)
-  response-inserter.ts CalloutInserter (streaming) + replaceTemplateBlock (template mode)
-  __tests__/           6 test files, 35 tests total
+  response-inserter.ts CalloutInserter (Ask Question) + StreamingTemplateReplacer (templates) + replaceTemplateBlock (non-streaming fallback)
+  __tests__/           6 test files, 40 tests total
 styles.css             Question bar + streaming indicator CSS
 install.sh             Build + deploy to Obsidian vault
 doc/implementation.md  Build history and design decisions
@@ -26,7 +26,7 @@ doc/implementation.md  Build history and design decisions
 ```bash
 npm run build          # tsc + esbuild → main.js
 npm run dev            # esbuild watch mode
-npm test               # vitest run (35 tests)
+npm test               # vitest run (40 tests)
 npm run test:watch     # vitest watch mode
 ./install.sh [vault]   # build + test + install to vault (default: ~/Documents/Ekuro)
 ```
@@ -42,14 +42,14 @@ npm run test:watch     # vitest watch mode
 - **WASM bridge pattern**: Same as obsidian-annotation and turboref — `FileSystemAdapter.readBinary()` loads the `.wasm` binary, `initSync({ module })` initializes the WASM module, then construct `LlmClient`.
 - **Question bar**: CM6 `showPanel` + `Compartment` lifecycle (adapted from obsidian-llm-helper). CSS prefix: `llm-prompt-bar`.
 - **Concurrency guard**: `WasmBridge.isProcessing` prevents overlapping streaming requests (single HTTP connection in the WASM client).
-- **Template processing**: Reverse document order to preserve char offsets when replacing blocks with different-length text.
+- **Template processing**: Reverse document order to preserve char offsets when replacing blocks with different-length text. `StreamingTemplateReplacer` streams responses live (same UX as Ask Question callout).
 
 ## Plugin commands
 
 | Command | ID | Behavior |
 |---------|----|----------|
 | Ask Question | `llm-prompt` | Shows question bar → formats prompt (question + selection + file path) → streams response into `> [!llm]+ Response` callout |
-| Process Templates | `llm-process-templates` | Finds all `{{llm: instruction}}` blocks → extracts surrounding context → calls LLM → replaces each block with response |
+| Process Templates | `llm-process-templates` | Finds all `{{llm: instruction}}` blocks → extracts surrounding context → calls LLM → streams response live into each block position |
 
 ## Settings (DEFAULT_SETTINGS)
 
@@ -63,7 +63,7 @@ npm run test:watch     # vitest watch mode
 
 ## Testing
 
-35 vitest tests across 6 files. Pure functions (template-parser, context-extractor, prompt-formatter, config) tested directly. Bridge tested with mocked WASM module via `Object.defineProperty` on private fields. Response inserter tested with a mock Editor object. Question bar and main.ts are tested manually in Obsidian.
+40 vitest tests across 6 files. Pure functions (template-parser, context-extractor, prompt-formatter, config) tested directly. Bridge tested with mocked WASM module via `Object.defineProperty` on private fields. Response inserter tested with a mock Editor object (both `replaceTemplateBlock` and `StreamingTemplateReplacer`). Question bar and main.ts are tested manually in Obsidian.
 
 ## Key files in other repos
 

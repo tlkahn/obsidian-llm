@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { replaceTemplateBlock } from "../response-inserter";
+import { replaceTemplateBlock, StreamingTemplateReplacer } from "../response-inserter";
 
 // Mock Obsidian Editor
 function createMockEditor(initialContent: string) {
@@ -85,5 +85,49 @@ describe("replaceTemplateBlock", () => {
         const editor = createMockEditor("A {{llm: test}} B");
         replaceTemplateBlock(editor as any, 2, 15, "");
         expect(editor.getValue()).toBe("A  B");
+    });
+});
+
+describe("StreamingTemplateReplacer", () => {
+    it("removes template block on construction", () => {
+        const editor = createMockEditor("Hello {{llm: explain}} world");
+        new StreamingTemplateReplacer(editor as any, 6, 22);
+        expect(editor.getValue()).toBe("Hello  world");
+    });
+
+    it("streams chunks into the replaced position", () => {
+        const editor = createMockEditor("Hello {{llm: explain}} world");
+        const replacer = new StreamingTemplateReplacer(editor as any, 6, 22);
+        replacer.appendChunk("streaming ");
+        replacer.appendChunk("text");
+        expect(editor.getValue()).toBe("Hello streaming text world");
+    });
+
+    it("handles multiline streamed response", () => {
+        const editor = createMockEditor("Before\n{{llm: test}}\nAfter");
+        const replacer = new StreamingTemplateReplacer(editor as any, 7, 20);
+        replacer.appendChunk("Line one\n");
+        replacer.appendChunk("Line two");
+        expect(editor.getValue()).toBe("Before\nLine one\nLine two\nAfter");
+    });
+
+    it("handles empty stream (no chunks)", () => {
+        const editor = createMockEditor("A {{llm: test}} B");
+        new StreamingTemplateReplacer(editor as any, 2, 15);
+        expect(editor.getValue()).toBe("A  B");
+    });
+
+    it("produces same result as replaceTemplateBlock for complete text", () => {
+        const content = "Start {{llm: q}} End";
+        const editor1 = createMockEditor(content);
+        const editor2 = createMockEditor(content);
+
+        replaceTemplateBlock(editor1 as any, 6, 16, "answer");
+
+        const replacer = new StreamingTemplateReplacer(editor2 as any, 6, 16);
+        replacer.appendChunk("ans");
+        replacer.appendChunk("wer");
+
+        expect(editor2.getValue()).toBe(editor1.getValue());
     });
 });

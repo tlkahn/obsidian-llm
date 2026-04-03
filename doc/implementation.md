@@ -83,6 +83,36 @@ CSS class prefix changed from `llm-question-bar` to `llm-prompt-bar` to avoid co
 
 Returns `Promise<string | null>` — resolves with question text on Cmd/Ctrl+Enter, null on Escape.
 
+### Phase 8b: Streaming template replacer
+
+The original "Process Templates" flow accumulated the full LLM response in memory, then called `replaceTemplateBlock` in one shot. This meant template users saw nothing until the entire response was ready — a noticeably worse experience than the "Ask Question" callout, which streams live.
+
+`StreamingTemplateReplacer` (added to `response-inserter.ts`) gives templates the same live-streaming behavior:
+
+1. **Constructor**: immediately deletes the `{{llm: ...}}` block via `editor.replaceRange("", from, to)` and records the `startOffset` where text will be inserted.
+2. **`appendChunk(chunk)`**: inserts each chunk at `startOffset + insertedLength`, then advances `insertedLength`.
+
+Because templates are still processed in reverse document order (highest offset first), deleting/expanding one block never shifts offsets of unprocessed blocks that appear earlier in the document.
+
+`main.ts` was updated to replace the accumulate-then-replace pattern:
+
+```typescript
+// Before
+let response = "";
+await this.bridge.promptStreaming(prompt, systemPrompt, options, (chunk) => {
+    response += chunk;
+});
+replaceTemplateBlock(editor, tmpl.charStart, tmpl.charEnd, response);
+
+// After
+const replacer = new StreamingTemplateReplacer(editor, tmpl.charStart, tmpl.charEnd);
+await this.bridge.promptStreaming(prompt, systemPrompt, options, (chunk) => {
+    replacer.appendChunk(chunk);
+});
+```
+
+`replaceTemplateBlock` is retained for any non-streaming callers but is no longer imported by `main.ts`.
+
 ### Phase 9: Main plugin
 
 `LlmPlugin` extends `Plugin`, wires everything together:
@@ -105,7 +135,7 @@ Both commands check for API key presence and show a `Notice` on error.
 
 ## Test inventory
 
-35 tests across 6 test files (vitest):
+40 tests across 6 test files (vitest):
 
 | File | Tests | What's covered |
 |------|-------|----------------|
@@ -114,12 +144,12 @@ Both commands check for API key presence and show a `Notice` on error.
 | prompt-formatter.test.ts | 5 | Question only, question+context, with file path, full combination, whitespace trim |
 | bridge.test.ts | 6 | Uninit throw, concurrent reject, options JSON passthrough, chunk callback, error recovery |
 | config.test.ts | 5 | Default model, temperature, apiKey, baseUrl, systemPrompt |
-| response-inserter.test.ts | 4 | Template replacement, surrounding preservation, multiline response, empty response |
+| response-inserter.test.ts | 9 | Template replacement, surrounding preservation, multiline response, empty response, streaming construction, streaming chunks, streaming multiline, streaming empty, streaming equivalence with replaceTemplateBlock |
 
 ## Known limitations / future work
 
 - No fallback modal for when CM6 view is unavailable (e.g., reading mode). The question bar simply won't appear.
 - Template processing is sequential (one template at a time). Parallel processing would be faster for many templates but requires removing the concurrency guard or using multiple clients.
 - No conversation history — each prompt is stateless.
-- No streaming indicator in the editor during template processing (only for "Ask Question" callouts).
+- ~~No streaming indicator in the editor during template processing~~ — resolved: `StreamingTemplateReplacer` now streams template responses live, matching "Ask Question" behavior.
 - The `import.meta` esbuild warning is cosmetic — the dead code path (URL-based WASM init) is never reached.
