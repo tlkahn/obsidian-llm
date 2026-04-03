@@ -2,7 +2,7 @@
 
 ## Overview
 
-obsidian-llm v0.1.0 — Obsidian plugin that calls LLMs directly from notes via a WASM-compiled Rust client (`llm-wasm` from the `llm-rs` project). Two features: interactive prompt dialog and inline template processing.
+obsidian-llm v0.1.0 — Obsidian plugin that calls LLMs directly from notes via a WASM-compiled Rust client (`llm-wasm` from the `llm-rs` project). Three features: interactive prompt dialog, inline template processing, and in-place translation with structured HTML comment output.
 
 Built 2026-04-04.
 
@@ -113,7 +113,37 @@ await this.bridge.promptStreaming(prompt, systemPrompt, options, (chunk) => {
 
 `replaceTemplateBlock` is retained for any non-streaming callers but is no longer imported by `main.ts`.
 
-### Phase 9: Main plugin
+### Phase 9: Translate command
+
+Added a third LLM command: **Translate** (`llm-translate`). Translates selected text (or the current paragraph when nothing is selected) and appends the result in a structured HTML comment block.
+
+**New setting**: `translationLanguage` (default `"English"`) added to `PluginSettings` and the settings tab. Controls the target language for translation.
+
+**Output format**: The translation is wrapped in an HTML comment with metadata headers:
+
+```
+\n\n<!--
+tr
+p
+@2026-04-04
+---
+translated text here
+-->
+```
+
+- `tr` — identifies this as a translation block
+- `p` / `p__` / `p___` — paragraph marker; bare `p` for a single paragraph, underscores count multi-paragraph selections (e.g. `p___` = 3 paragraphs)
+- `@YYYY-MM-DD` — date stamp
+- `---` — separator before the translated content
+- An empty line separates the source text from the comment block
+
+**TranslationInserter** (in `response-inserter.ts`): Same offset-based streaming pattern as `StreamingTemplateReplacer`. Constructor inserts the header block and records the content start offset. `appendChunk()` streams text in. `finalize()` appends `\n-->` to close the comment — called in a `finally` block so unclosed comments can't be left behind on errors.
+
+**Paragraph detection** (`findParagraphBounds` in `main.ts`): When no text is selected, scans backward/forward from the cursor offset for `\n\n` boundaries (or document edges) to identify the current paragraph. The source text and its end offset are then used identically to the selection path.
+
+**System prompt override**: The Translate command uses a purpose-built system prompt (`"Translate the following text to ${targetLang}. Output only the translation, no commentary."`) rather than the user's general `systemPrompt` setting, since the instruction must be precise.
+
+### Phase 10: Main plugin
 
 `LlmPlugin` extends `Plugin`, wires everything together:
 
@@ -121,7 +151,9 @@ await this.bridge.promptStreaming(prompt, systemPrompt, options, (chunk) => {
 
 **"Process Templates" command** (`llm-process-templates`): Parses all `{{llm: ...}}` blocks in the document, processes them in reverse document order (to preserve char offsets), extracts surrounding context for each, calls `bridge.promptStreaming()`, and replaces the template block with the response.
 
-Both commands check for API key presence and show a `Notice` on error.
+**"Translate" command** (`llm-translate`): Gets selected text or detects the current paragraph, counts paragraphs, creates a `TranslationInserter`, streams the translation into an HTML comment block after the source text. Uses a dedicated system prompt that overrides the general setting.
+
+All commands check for API key presence and show a `Notice` on error.
 
 ## Design decisions
 
@@ -135,7 +167,7 @@ Both commands check for API key presence and show a `Notice` on error.
 
 ## Test inventory
 
-40 tests across 6 test files (vitest):
+46 tests across 6 test files (vitest):
 
 | File | Tests | What's covered |
 |------|-------|----------------|
@@ -144,7 +176,7 @@ Both commands check for API key presence and show a `Notice` on error.
 | prompt-formatter.test.ts | 5 | Question only, question+context, with file path, full combination, whitespace trim |
 | bridge.test.ts | 6 | Uninit throw, concurrent reject, options JSON passthrough, chunk callback, error recovery |
 | config.test.ts | 5 | Default model, temperature, apiKey, baseUrl, systemPrompt |
-| response-inserter.test.ts | 9 | Template replacement, surrounding preservation, multiline response, empty response, streaming construction, streaming chunks, streaming multiline, streaming empty, streaming equivalence with replaceTemplateBlock |
+| response-inserter.test.ts | 15 | Template replacement (4), StreamingTemplateReplacer (5), TranslationInserter: header format with multi-paragraph underscores, bare `p` for single paragraph, streaming chunks, finalize close, full round-trip output, surrounding text preservation (6) |
 
 ## Known limitations / future work
 

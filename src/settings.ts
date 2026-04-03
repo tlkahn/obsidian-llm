@@ -79,5 +79,18 @@ export class LlmSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     })
             );
+
+        new Setting(containerEl)
+            .setName("Translation Language")
+            .setDesc("Target language for the Translate command")
+            .addText((text) =>
+                text
+                    .setPlaceholder("English")
+                    .setValue(this.plugin.settings.translationLanguage)
+                    .onChange(async (value) => {
+                        this.plugin.settings.translationLanguage = value;
+                        await this.plugin.saveSettings();
+                    })
+            );
     }
 }

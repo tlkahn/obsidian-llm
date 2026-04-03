@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { replaceTemplateBlock, StreamingTemplateReplacer } from "../response-inserter";
+import { describe, it, expect } from "vitest";
+import { replaceTemplateBlock, StreamingTemplateReplacer, TranslationInserter } from "../response-inserter";
 
 // Mock Obsidian Editor
 function createMockEditor(initialContent: string) {
@@ -41,6 +41,9 @@ function createMockEditor(initialContent: string) {
                 }
             }
             return { line, ch };
+        },
+        posToOffset(pos: { line: number; ch: number }) {
+            return getOffset(lines, pos.line, pos.ch);
         },
     };
     return editor;
@@ -129,5 +132,60 @@ describe("StreamingTemplateReplacer", () => {
         replacer.appendChunk("wer");
 
         expect(editor2.getValue()).toBe(editor1.getValue());
+    });
+});
+
+describe("TranslationInserter", () => {
+    it("inserts header with correct underscore count and date for multiple paragraphs", () => {
+        const editor = createMockEditor("Hello world");
+        new TranslationInserter(editor as any, 11, 2, "2026-04-04");
+        expect(editor.getValue()).toContain("p__");
+        expect(editor.getValue()).toContain("@2026-04-04");
+    });
+
+    it("uses bare p for single paragraph", () => {
+        const editor = createMockEditor("Hello world");
+        new TranslationInserter(editor as any, 11, 1, "2026-04-04");
+        expect(editor.getValue()).toContain("\np\n");
+        expect(editor.getValue()).not.toContain("p_");
+    });
+
+    it("streams chunks inside the comment block", () => {
+        const editor = createMockEditor("Hello world");
+        const inserter = new TranslationInserter(editor as any, 11, 1, "2026-04-04");
+        inserter.appendChunk("Hola ");
+        inserter.appendChunk("mundo");
+        expect(editor.getValue()).toContain("Hola mundo");
+    });
+
+    it("finalize closes the comment with -->", () => {
+        const editor = createMockEditor("Hello world");
+        const inserter = new TranslationInserter(editor as any, 11, 1, "2026-04-04");
+        inserter.appendChunk("Hola mundo");
+        inserter.finalize();
+        expect(editor.getValue()).toContain("-->");
+    });
+
+    it("produces correct full output format with empty line before block", () => {
+        const editor = createMockEditor("Hello world");
+        const inserter = new TranslationInserter(editor as any, 11, 1, "2026-04-04");
+        inserter.appendChunk("Hola mundo");
+        inserter.finalize();
+        expect(editor.getValue()).toBe(
+            "Hello world\n\n<!--\ntr\np\n@2026-04-04\n---\nHola mundo\n-->"
+        );
+    });
+
+    it("preserves surrounding text", () => {
+        const editor = createMockEditor("Before\n\nMiddle\n\nAfter");
+        // Insert after "Middle" paragraph (offset 14 = end of "Middle")
+        const inserter = new TranslationInserter(editor as any, 14, 1, "2026-04-04");
+        inserter.appendChunk("Medio");
+        inserter.finalize();
+        const value = editor.getValue();
+        expect(value).toMatch(/^Before/);
+        expect(value).toContain("Middle");
+        expect(value).toContain("Medio");
+        expect(value).toMatch(/After$/);
     });
 });

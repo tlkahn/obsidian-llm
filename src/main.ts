@@ -15,7 +15,7 @@ import { showQuestionBar } from "./question-bar";
 import { formatLlmPrompt } from "./prompt-formatter";
 import { parseTemplates } from "./template-parser";
 import { extractContext } from "./context-extractor";
-import { CalloutInserter, StreamingTemplateReplacer } from "./response-inserter";
+import { CalloutInserter, StreamingTemplateReplacer, TranslationInserter } from "./response-inserter";
 
 export default class LlmPlugin extends Plugin {
     settings: PluginSettings = DEFAULT_SETTINGS;
@@ -60,6 +60,15 @@ export default class LlmPlugin extends Plugin {
             name: "Process Templates",
             editorCallback: (editor: Editor) => {
                 this.handleProcessTemplates(editor);
+            },
+        });
+
+        // Command: Translate
+        this.addCommand({
+            id: "llm-translate",
+            name: "Translate",
+            editorCallback: (editor: Editor) => {
+                this.handleTranslate(editor);
             },
         });
     }
@@ -180,5 +189,72 @@ export default class LlmPlugin extends Plugin {
         }
 
         new Notice(`LLM: Processed ${processed}/${templates.length} templates.`);
+    }
+
+    private findParagraphBounds(content: string, cursorOffset: number): { start: number; end: number } {
+        let start = cursorOffset;
+        while (start > 0) {
+            if (content[start - 1] === "\n" && start >= 2 && content[start - 2] === "\n") {
+                break;
+            }
+            start--;
+        }
+
+        let end = cursorOffset;
+        while (end < content.length) {
+            if (content[end] === "\n" && end + 1 < content.length && content[end + 1] === "\n") {
+                break;
+            }
+            end++;
+        }
+
+        return { start, end };
+    }
+
+    private async handleTranslate(editor: Editor) {
+        if (!this.settings.apiKey) {
+            new Notice("LLM: Please set your API key in settings.");
+            return;
+        }
+
+        let sourceText: string;
+        let afterOffset: number;
+
+        const selection = editor.getSelection();
+        if (selection) {
+            sourceText = selection;
+            afterOffset = editor.posToOffset(editor.getCursor("to"));
+        } else {
+            const content = editor.getValue();
+            const cursorOffset = editor.posToOffset(editor.getCursor());
+            const bounds = this.findParagraphBounds(content, cursorOffset);
+            sourceText = content.slice(bounds.start, bounds.end);
+            afterOffset = bounds.end;
+        }
+
+        if (!sourceText.trim()) {
+            new Notice("LLM: No text to translate.");
+            return;
+        }
+
+        const paragraphCount = sourceText.split("\n\n").filter((s) => s.trim()).length;
+        const date = new Date().toISOString().slice(0, 10);
+        const targetLang = this.settings.translationLanguage || "English";
+        const systemPrompt = `Translate the following text to ${targetLang}. Output only the translation, no commentary.`;
+        const options: Record<string, unknown> = {
+            temperature: this.settings.temperature,
+        };
+
+        const inserter = new TranslationInserter(editor, afterOffset, paragraphCount, date);
+
+        try {
+            await this.bridge.promptStreaming(sourceText, systemPrompt, options, (chunk: string) => {
+                inserter.appendChunk(chunk);
+            });
+        } catch (e: any) {
+            new Notice(`LLM Error: ${e.message}`);
+        } finally {
+            inserter.finalize();
+        }
     }
 }

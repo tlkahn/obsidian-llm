@@ -58,6 +58,32 @@ export class StreamingTemplateReplacer {
     }
 }
 
+export class TranslationInserter {
+    private editor: Editor;
+    private startOffset: number;
+    private insertedLength: number = 0;
+
+    constructor(editor: Editor, afterOffset: number, paragraphCount: number, date: string) {
+        this.editor = editor;
+        const pMark = paragraphCount <= 1 ? "p" : "p" + "_".repeat(paragraphCount);
+        const header = `\n\n<!--\ntr\n${pMark}\n@${date}\n---\n`;
+        const insertPos = editor.offsetToPos(afterOffset);
+        editor.replaceRange(header, insertPos);
+        this.startOffset = afterOffset + header.length;
+    }
+
+    appendChunk(chunk: string): void {
+        const insertPos = this.editor.offsetToPos(this.startOffset + this.insertedLength);
+        this.editor.replaceRange(chunk, insertPos);
+        this.insertedLength += chunk.length;
+    }
+
+    finalize(): void {
+        const insertPos = this.editor.offsetToPos(this.startOffset + this.insertedLength);
+        this.editor.replaceRange("\n-->", insertPos);
+    }
+}
+
 export function replaceTemplateBlock(
     editor: Editor,
     charStart: number,

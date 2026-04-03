@@ -1,6 +1,6 @@
 # Obsidian LLM
 
-An Obsidian plugin that calls LLMs directly from your notes. Ask questions about selected text and get streaming responses as callouts, or place `{{llm: ...}}` templates in your notes and process them in batch.
+An Obsidian plugin that calls LLMs directly from your notes. Ask questions about selected text, process inline `{{llm: ...}}` templates in batch, or translate text in place — all with live streaming responses.
 
 Uses a WASM-compiled Rust client ([llm-rs](https://github.com/simonw/llm)) for LLM API calls — no external processes, no Electron IPC, just the plugin and the API.
 
@@ -41,6 +41,32 @@ Then run **LLM: Process Templates** from the command palette. Each template bloc
 
 Templates inside fenced code blocks are ignored.
 
+### Translate
+
+1. Select text (or just place your cursor in a paragraph)
+2. Run **LLM: Translate** from the command palette
+3. The translation streams in as an HTML comment block directly after the source text:
+
+```markdown
+Some text in French.
+
+<!--
+tr
+p
+@2026-04-04
+---
+Some text translated to English.
+-->
+```
+
+The comment block is invisible in Obsidian's reading/preview mode, keeping your notes clean. The metadata lines encode:
+
+- `tr` — translation marker
+- `p` — single paragraph (`p__` for 2 paragraphs, `p___` for 3, etc.)
+- `@YYYY-MM-DD` — date of translation
+
+The target language defaults to English and can be changed in settings.
+
 ## Setup
 
 ### Prerequisites
@@ -76,6 +102,7 @@ Open Settings > LLM and configure:
 | **Base URL** | Custom API endpoint (leave empty for OpenAI default) |
 | **System Prompt** | Default system prompt sent with every request |
 | **Temperature** | 0 (deterministic) to 1 (creative), default 0.7 |
+| **Translation Language** | Target language for the Translate command (default: English) |
 
 The plugin works with any OpenAI-compatible API. Set the **Base URL** to use providers like Ollama, Together, or Azure OpenAI.
 
@@ -84,7 +111,7 @@ The plugin works with any OpenAI-compatible API. Set the **Base URL** to use pro
 ```bash
 npm install
 npm run dev          # esbuild watch mode
-npm test             # run 40 tests
+npm test             # run 46 tests
 npm run test:watch   # vitest watch mode
 npm run build        # production build (tsc + esbuild)
 ```
@@ -101,7 +128,7 @@ src/
   context-extractor.ts Extract surrounding paragraphs for context
   prompt-formatter.ts  Assemble prompt from question + context + metadata
   question-bar.ts      CodeMirror 6 panel for question input
-  response-inserter.ts Streaming response insertion (callouts + templates)
+  response-inserter.ts Streaming response insertion (callouts, templates, translation)
   __tests__/           Test files (vitest)
 ```
 

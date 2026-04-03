@@ -4,6 +4,7 @@ export interface PluginSettings {
     baseUrl: string;
     systemPrompt: string;
     temperature: number;
+    translationLanguage: string;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -12,4 +13,5 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     baseUrl: "",
     systemPrompt: "",
     temperature: 0.7,
+    translationLanguage: "English",
 };
