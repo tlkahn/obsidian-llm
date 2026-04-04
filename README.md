@@ -2,6 +2,8 @@
 
 An Obsidian plugin that calls LLMs directly from your notes. Ask questions about selected text, process inline `{{llm: ...}}` templates in batch, or translate text in place — all with live streaming responses.
 
+Supports **OpenAI** and **Anthropic** models out of the box, plus any OpenAI-compatible provider via custom base URL.
+
 Uses a WASM-compiled Rust client ([llm-rs](https://github.com/simonw/llm)) for LLM API calls — no external processes, no Electron IPC, just the plugin and the API.
 
 Desktop only.
@@ -103,16 +105,31 @@ Restart Obsidian, then enable **LLM** under Settings > Community Plugins.
 
 Open Settings > LLM and configure:
 
+**Model** — Select from the dropdown (OpenAI and Anthropic models listed) or choose "Custom..." to enter any model ID.
+
+**OpenAI**
+
 | Setting | Description |
 |---------|-------------|
-| **API Key** | Your OpenAI (or compatible provider) API key |
-| **Model** | Model identifier, e.g. `gpt-4o-mini`, `gpt-4o` |
-| **Base URL** | Custom API endpoint (leave empty for OpenAI default) |
+| **API Key** | Your OpenAI API key (`sk-...`) |
+| **Base URL** | Custom endpoint (leave empty for OpenAI default). Use this for compatible providers like Ollama, Together, or Azure OpenAI. |
+
+**Anthropic**
+
+| Setting | Description |
+|---------|-------------|
+| **API Key** | Your Anthropic API key (`sk-ant-...`) |
+| **Base URL** | Custom endpoint (leave empty for Anthropic default) |
+
+**General**
+
+| Setting | Description |
+|---------|-------------|
 | **System Prompt** | Default system prompt sent with every request |
 | **Temperature** | 0 (deterministic) to 1 (creative), default 0.7 |
 | **Translation Language** | Target language for the Translate command (default: English) |
 
-The plugin works with any OpenAI-compatible API. Set the **Base URL** to use providers like Ollama, Together, or Azure OpenAI.
+You only need to configure the API key for the provider whose models you want to use. You can configure both and switch between them by changing the model.
 
 ### Debugging
 
@@ -123,7 +140,7 @@ All three commands log the full prompt payload to Obsidian's developer console b
 ```bash
 npm install
 npm run dev          # esbuild watch mode
-npm test             # run 57 tests
+npm test             # run 93 tests
 npm run test:watch   # vitest watch mode
 npm run build        # production build (tsc + esbuild)
 ```
@@ -133,9 +150,10 @@ npm run build        # production build (tsc + esbuild)
 ```
 src/
   main.ts              Plugin entrypoint and command handlers
-  config.ts            Settings interface and defaults
-  settings.ts          Obsidian settings tab UI
+  config.ts            Settings interface, defaults, provider routing, migration
+  settings.ts          Obsidian settings tab UI (per-provider sections, model dropdown)
   bridge.ts            WASM bridge (init, client lifecycle, streaming)
+  fetch-patch.ts       CORS bypass for Anthropic API (Node.js https fetch patch)
   template-parser.ts   Find {{llm: ...}} blocks in markdown
   context-extractor.ts Extract surrounding paragraphs for context
   prompt-formatter.ts  Assemble prompt from question + context + metadata
@@ -156,6 +174,12 @@ cd ~/Projects/obsidian-llm
 npm install    # re-links the file: dependency
 npm run build
 ```
+
+### Technical notes
+
+**CORS and Anthropic**: The WASM module uses browser `fetch()` internally (via reqwest compiled to WASM). OpenAI's API sends CORS headers; Anthropic's does not. The plugin patches `globalThis.fetch` to detect Anthropic requests (by the `x-api-key` header) and routes them through Node.js `https`, which is available in Obsidian's Electron context and not subject to CORS. Streaming is preserved. See `src/fetch-patch.ts` and `doc/implementation.md` (Phase 13) for details.
+
+**Settings migration**: Users upgrading from v0.1.0 (single API key) to v0.2.0 (per-provider keys) get automatic migration — the old `apiKey` and `baseUrl` fields are copied to `openaiApiKey` and `openaiBaseUrl`, then the legacy fields are removed.
 
 ## License
 

@@ -212,6 +212,96 @@ Added `console.debug` logging before each `bridge.promptStreaming()` call to mak
 
 Uses `console.debug` (not `console.log`) so messages are hidden by default unless the console filter includes debug-level output.
 
+### Phase 13: Multi-provider support (OpenAI + Anthropic)
+
+The llm-rs backend already supported Anthropic models alongside OpenAI, but the plugin was hardwired to a single API key, single base URL, and OpenAI-only bridge constructors.
+
+#### WASM prerequisite
+
+Rebuilt `llm-wasm` (`wasm-pack build crates/llm-wasm --target web`) to export all four `LlmClient` constructors:
+- `new(apiKey, model)` — OpenAI default
+- `newWithBaseUrl(apiKey, model, baseUrl)` — OpenAI custom endpoint
+- `newAnthropic(apiKey, model)` — Anthropic default
+- `newAnthropicWithBaseUrl(apiKey, model, baseUrl)` — Anthropic custom endpoint
+
+The Rust source already had these (`lib.rs` lines 39–69), but the previous WASM build predated the Anthropic additions, so the `.d.ts` only had the OpenAI pair.
+
+#### config.ts — provider routing and settings migration (TDD)
+
+All new logic in `config.ts`, driven by 28 tests in `config.test.ts`:
+
+**`getProviderForModel(model)`** — returns `"anthropic"` for any `claude*` prefix, `"openai"` otherwise. Mirrors the Rust auto-detect logic in `LlmClient::new()`.
+
+**`KNOWN_MODELS`** — `Record<Provider, string[]>` with known model IDs per provider. Used by the settings dropdown.
+
+**`PluginSettings` interface** — replaced single `apiKey`/`baseUrl` with per-provider fields:
+- `openaiApiKey`, `openaiBaseUrl`
+- `anthropicApiKey`, `anthropicBaseUrl`
+- `model`, `systemPrompt`, `temperature`, `translationLanguage` unchanged
+
+**`migrateSettings(data)`** — handles legacy settings that had `apiKey`/`baseUrl`. Copies legacy values to `openaiApiKey`/`openaiBaseUrl` if the new fields are empty, then strips legacy keys. New-format settings pass through unchanged. Missing fields get `DEFAULT_SETTINGS` values.
+
+**`getActiveApiKey(settings)` / `getActiveBaseUrl(settings)`** — look up the provider for the current model and return the corresponding field. Used by `main.ts` everywhere the old `settings.apiKey` / `settings.baseUrl` was used.
+
+#### bridge.ts — provider-routed constructor (TDD)
+
+`LlmWasmModule` interface expanded with `newAnthropic` and `newAnthropicWithBaseUrl` static methods.
+
+`createClient()` now calls `getProviderForModel(model)` and routes to the correct constructor — four branches for (openai|anthropic) × (default|custom baseUrl).
+
+5 new tests in `bridge.test.ts` verify each routing path and old-client freeing. Mock setup required `mockImplementation(function() { return mockClient })` (not arrow function) because Vitest's `vi.fn()` arrow-function mocks aren't valid `new` targets.
+
+#### main.ts — integration
+
+- `loadSettings()`: `migrateSettings(await this.loadData() || {})` replaces `Object.assign({}, DEFAULT_SETTINGS, ...)`
+- Client creation in `onload()` and `saveSettings()`: uses `getActiveApiKey(settings)` and `getActiveBaseUrl(settings)`
+- All three command handlers check `!getActiveApiKey(settings)` instead of `!settings.apiKey`, with provider-specific notice messages (e.g. "Please set your anthropic API key")
+
+#### settings.ts — per-provider UI
+
+Replaced single API key / base URL inputs with three sections:
+- **Model**: dropdown grouped by provider label (`"OpenAI: gpt-4o"`, `"Anthropic: claude-sonnet-4-6"`, etc.) plus a `"Custom..."` option that reveals a free-text input
+- **OpenAI**: API key (password input), base URL
+- **Anthropic**: API key (password input), base URL
+- **General**: system prompt, temperature, translation language (unchanged)
+
+#### CORS bypass — the hard part
+
+**Problem**: The Anthropic API does not send `Access-Control-Allow-Origin` headers. Obsidian runs in Electron's Chromium renderer, which enforces CORS on browser `fetch()`. OpenAI's API allows CORS; Anthropic's does not. The WASM module (`reqwest` compiled to WASM) uses browser `fetch()` internally — no way to inject a custom HTTP client from the Rust side.
+
+**Discovery path**: First error was the CORS block itself. Fixed by patching `globalThis.fetch` to route Anthropic requests through Node.js `https` (available in Electron, not subject to CORS). Second error was `"url parse"` — the synthetic `Response` from `new Response(body, init)` has `url` property `""`, and reqwest's WASM layer calls `Url::parse(response.url())` which fails on empty input.
+
+**Solution** (`fetch-patch.ts`):
+
+1. `patchFetchForCORS()` — called once from `WasmBridge.init()` before WASM initialization. Saves the original `globalThis.fetch` and replaces it with a wrapper.
+2. **Detection**: `hasXApiKeyHeader(input, init)` checks for the `x-api-key` HTTP header, which is Anthropic-specific (OpenAI uses `Authorization: Bearer`). Handles all `HeadersInit` variants: plain object, `Headers` instance, array of tuples, and `Request` object.
+3. **Extraction**: `extractFetchArgs(input, init)` extracts URL, method, headers, and body from either a `Request` object (what reqwest passes) or separate `input`+`init` arguments. For `Request` objects, calls `input.text()` to read the body.
+4. **Node.js fetch**: `nodeFetch(args)` uses `https.request()` / `http.request()` to make the HTTP call. Wraps the Node.js `IncomingMessage` in a `ReadableStream` → `Response`, preserving streaming for SSE. Sets `Object.defineProperty(response, "url", { value: args.url })` to fix the empty-URL parse error.
+5. **Passthrough**: Non-Anthropic requests delegate to the original `fetch()` unchanged.
+
+**Why `x-api-key` header detection**: It's the most robust way to identify Anthropic requests regardless of base URL. If users have a custom Anthropic-compatible proxy, the header still identifies the request correctly. OpenAI and all OpenAI-compatible providers use `Authorization: Bearer`, so there's no false-positive risk.
+
+**Why Node.js `https` instead of Obsidian's `requestUrl`**: `requestUrl` returns the full response body at once — no streaming. Node.js `https.request()` returns an `IncomingMessage` stream that can be wrapped in a `ReadableStream`, which the browser `Response` constructor accepts. This preserves reqwest's SSE streaming pipeline without changes.
+
+**Why `Object.defineProperty` for `Response.url`**: The `Response` constructor doesn't accept a `url` parameter — `Response.url` is a readonly property set by the browser's fetch machinery, defaulting to `""` for constructed responses. reqwest's WASM layer reads `response.url()` and passes it to Rust's `Url::parse()`, which rejects empty strings. The `Object.defineProperty` override is the cleanest way to set it without subclassing.
+
+8 tests in `fetch-patch.test.ts` cover header detection across all `HeadersInit` variants.
+
+#### Test count
+
+93 tests across 8 files (was 57 across 7):
+
+| File | Tests | What's covered |
+|------|-------|----------------|
+| template-parser.test.ts | 8 | Single/multiple blocks, empty, offsets, multiline, code fence exclusion, whitespace |
+| context-extractor.test.ts | 7 | Target paragraph, surrounding expansion, start/end of doc, short doc, template exclusion, custom count |
+| prompt-formatter.test.ts | 5 | Question only, question+context, with file path, full combination, whitespace trim |
+| bridge.test.ts | 11 | Uninit throw, concurrent reject, options JSON passthrough, chunk callback, error recovery, provider-routed constructor (OpenAI default/custom, Anthropic default/custom, old client freed) |
+| config.test.ts | 28 | DEFAULT_SETTINGS fields, KNOWN_MODELS, getProviderForModel (6 models), migrateSettings (6 cases), getActiveApiKey (3), getActiveBaseUrl (3) |
+| response-inserter.test.ts | 15 | Template replacement (4), StreamingTemplateReplacer (5), TranslationInserter (6) |
+| heading-context.test.ts | 11 | No headings, selection before headings, single/nested/deep ancestors, sibling exclusion, exact-offset boundary, cross-section ranges |
+| fetch-patch.test.ts | 8 | hasXApiKeyHeader: plain object, case-insensitive, Headers instance, array, Request object, Authorization-only (false), no headers (false), URL object (false) |
+
 ## Known limitations / future work
 
 - No fallback modal for when CM6 view is unavailable (e.g., reading mode). The question bar simply won't appear.

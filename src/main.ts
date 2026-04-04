@@ -8,7 +8,7 @@ import {
 } from "obsidian";
 import { Compartment } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { PluginSettings, DEFAULT_SETTINGS } from "./config";
+import { PluginSettings, DEFAULT_SETTINGS, migrateSettings, getActiveApiKey, getActiveBaseUrl, getProviderForModel } from "./config";
 import { WasmBridge } from "./bridge";
 import { LlmSettingTab } from "./settings";
 import { showQuestionBar } from "./question-bar";
@@ -34,11 +34,12 @@ export default class LlmPlugin extends Plugin {
             if (adapter instanceof FileSystemAdapter) {
                 await this.bridge.init(this.manifest.dir!, adapter);
 
-                if (this.settings.apiKey) {
+                const apiKey = getActiveApiKey(this.settings);
+                if (apiKey) {
                     this.bridge.createClient(
-                        this.settings.apiKey,
+                        apiKey,
                         this.settings.model,
-                        this.settings.baseUrl || undefined
+                        getActiveBaseUrl(this.settings) || undefined
                     );
                 }
             }
@@ -75,18 +76,19 @@ export default class LlmPlugin extends Plugin {
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        this.settings = migrateSettings(await this.loadData() || {});
     }
 
     async saveSettings() {
         await this.saveData(this.settings);
         // Recreate client when settings change
-        if (this.settings.apiKey) {
+        const apiKey = getActiveApiKey(this.settings);
+        if (apiKey) {
             try {
                 this.bridge.createClient(
-                    this.settings.apiKey,
+                    apiKey,
                     this.settings.model,
-                    this.settings.baseUrl || undefined
+                    getActiveBaseUrl(this.settings) || undefined
                 );
             } catch (e) {
                 console.error("[LLM] Failed to recreate client:", e);
@@ -103,8 +105,9 @@ export default class LlmPlugin extends Plugin {
     }
 
     private async handlePrompt(editor: Editor, ctx: MarkdownView | MarkdownFileInfo) {
-        if (!this.settings.apiKey) {
-            new Notice("LLM: Please set your API key in settings.");
+        if (!getActiveApiKey(this.settings)) {
+            const provider = getProviderForModel(this.settings.model);
+            new Notice(`LLM: Please set your ${provider} API key in settings.`);
             return;
         }
 
@@ -150,8 +153,9 @@ export default class LlmPlugin extends Plugin {
     }
 
     private async handleProcessTemplates(editor: Editor) {
-        if (!this.settings.apiKey) {
-            new Notice("LLM: Please set your API key in settings.");
+        if (!getActiveApiKey(this.settings)) {
+            const provider = getProviderForModel(this.settings.model);
+            new Notice(`LLM: Please set your ${provider} API key in settings.`);
             return;
         }
 
@@ -217,8 +221,9 @@ export default class LlmPlugin extends Plugin {
     }
 
     private async handleTranslate(editor: Editor) {
-        if (!this.settings.apiKey) {
-            new Notice("LLM: Please set your API key in settings.");
+        if (!getActiveApiKey(this.settings)) {
+            const provider = getProviderForModel(this.settings.model);
+            new Notice(`LLM: Please set your ${provider} API key in settings.`);
             return;
         }
 

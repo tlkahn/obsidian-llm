@@ -118,3 +118,78 @@ describe("WasmBridge", () => {
         expect(result).toBe("ok");
     });
 });
+
+describe("WasmBridge.createClient provider routing", () => {
+    function makeMockBridge() {
+        const mockBridge = new WasmBridge();
+        const constructorFn = vi.fn();
+        const newWithBaseUrlFn = vi.fn();
+        const newAnthropicFn = vi.fn();
+        const newAnthropicWithBaseUrlFn = vi.fn();
+        const mockClient = { free: vi.fn(), promptStreamingWithOptions: vi.fn() };
+
+        constructorFn.mockImplementation(function() { return mockClient; });
+        newWithBaseUrlFn.mockReturnValue(mockClient);
+        newAnthropicFn.mockReturnValue(mockClient);
+        newAnthropicWithBaseUrlFn.mockReturnValue(mockClient);
+
+        const LlmClientClass: any = constructorFn;
+        LlmClientClass.newWithBaseUrl = newWithBaseUrlFn;
+        LlmClientClass.newAnthropic = newAnthropicFn;
+        LlmClientClass.newAnthropicWithBaseUrl = newAnthropicWithBaseUrlFn;
+
+        Object.defineProperty(mockBridge, "initialized", { value: true, writable: true });
+        Object.defineProperty(mockBridge, "wasmModule", {
+            value: { LlmClient: LlmClientClass },
+            writable: true,
+        });
+
+        return {
+            bridge: mockBridge,
+            constructorFn,
+            newWithBaseUrlFn,
+            newAnthropicFn,
+            newAnthropicWithBaseUrlFn,
+            mockClient,
+        };
+    }
+
+    it("uses LlmClient constructor for OpenAI model without baseUrl", () => {
+        const { bridge, constructorFn } = makeMockBridge();
+        bridge.createClient("sk-openai", "gpt-4o");
+        expect(constructorFn).toHaveBeenCalledWith("sk-openai", "gpt-4o");
+    });
+
+    it("uses newWithBaseUrl for OpenAI model with baseUrl", () => {
+        const { bridge, newWithBaseUrlFn } = makeMockBridge();
+        bridge.createClient("sk-openai", "gpt-4o", "https://custom.com");
+        expect(newWithBaseUrlFn).toHaveBeenCalledWith("sk-openai", "gpt-4o", "https://custom.com");
+    });
+
+    it("uses newAnthropic for Claude model without baseUrl", () => {
+        const { bridge, newAnthropicFn } = makeMockBridge();
+        bridge.createClient("sk-ant-abc", "claude-sonnet-4-6");
+        expect(newAnthropicFn).toHaveBeenCalledWith("sk-ant-abc", "claude-sonnet-4-6");
+    });
+
+    it("uses newAnthropicWithBaseUrl for Claude model with baseUrl", () => {
+        const { bridge, newAnthropicWithBaseUrlFn } = makeMockBridge();
+        bridge.createClient("sk-ant-abc", "claude-sonnet-4-6", "https://anthropic.example.com");
+        expect(newAnthropicWithBaseUrlFn).toHaveBeenCalledWith(
+            "sk-ant-abc",
+            "claude-sonnet-4-6",
+            "https://anthropic.example.com"
+        );
+    });
+
+    it("frees old client before creating new one", () => {
+        const { bridge, mockClient } = makeMockBridge();
+        // First call creates a client
+        bridge.createClient("sk-openai", "gpt-4o");
+        // Set up the client reference so it can be freed
+        Object.defineProperty(bridge, "client", { value: mockClient, writable: true });
+        // Second call should free old client
+        bridge.createClient("sk-ant-abc", "claude-sonnet-4-6");
+        expect(mockClient.free).toHaveBeenCalled();
+    });
+});

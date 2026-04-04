@@ -1,4 +1,6 @@
 import { FileSystemAdapter } from "obsidian";
+import { getProviderForModel } from "./config";
+import { patchFetchForCORS } from "./fetch-patch";
 
 // Types will be available at runtime from the WASM module
 interface LlmClientInstance {
@@ -16,6 +18,8 @@ interface LlmWasmModule {
     LlmClient: {
         new (apiKey: string, model: string): LlmClientInstance;
         newWithBaseUrl(apiKey: string, model: string, baseUrl: string): LlmClientInstance;
+        newAnthropic(apiKey: string, model: string): LlmClientInstance;
+        newAnthropicWithBaseUrl(apiKey: string, model: string, baseUrl: string): LlmClientInstance;
     };
 }
 
@@ -27,6 +31,8 @@ export class WasmBridge {
 
     async init(pluginDir: string, adapter: FileSystemAdapter): Promise<void> {
         if (this.initialized) return;
+
+        patchFetchForCORS();
 
         const wasmPath = `${pluginDir}/llm_wasm_bg.wasm`;
         const wasmBinary = await adapter.readBinary(wasmPath);
@@ -50,10 +56,20 @@ export class WasmBridge {
             this.client = null;
         }
 
-        if (baseUrl) {
-            this.client = this.wasmModule.LlmClient.newWithBaseUrl(apiKey, model, baseUrl);
+        const provider = getProviderForModel(model);
+
+        if (provider === "anthropic") {
+            if (baseUrl) {
+                this.client = this.wasmModule.LlmClient.newAnthropicWithBaseUrl(apiKey, model, baseUrl);
+            } else {
+                this.client = this.wasmModule.LlmClient.newAnthropic(apiKey, model);
+            }
         } else {
-            this.client = new this.wasmModule.LlmClient(apiKey, model);
+            if (baseUrl) {
+                this.client = this.wasmModule.LlmClient.newWithBaseUrl(apiKey, model, baseUrl);
+            } else {
+                this.client = new this.wasmModule.LlmClient(apiKey, model);
+            }
         }
     }
 
