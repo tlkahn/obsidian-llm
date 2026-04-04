@@ -312,6 +312,31 @@ Changed `extractContext`'s default `surrounding` parameter from 2 to 1, so templ
 
 **Lesson**: Tests that assert on content reachability in context-extraction are sensitive to the default window size, even when they appear to be testing a different concern (boundary handling). When changing defaults, check all tests that rely on the default path — not just the ones whose names reference the default value.
 
+### Phase 15: ReadableStream lifecycle fix in CORS bypass
+
+The Node.js fetch patch (`fetch-patch.ts`) wraps `IncomingMessage` in a `ReadableStream` for streaming Anthropic responses. Intermittent runtime errors appeared:
+
+```
+Uncaught TypeError: Failed to execute 'close' on 'ReadableStreamDefaultController':
+Cannot close an errored readable stream
+```
+
+**Root cause — two distinct paths**:
+
+1. **Node.js event ordering**: `IncomingMessage` can emit `error` then `end` (or vice versa). The original code called both `controller.error()` and `controller.close()`, but `ReadableStreamDefaultController` throws if you call either on a stream that's already terminal.
+
+2. **Consumer-side cancellation**: When the WASM layer (reqwest) finishes reading or aborts the response, it calls `reader.cancel()` on the `ReadableStream`. This transitions the controller to an errored state internally. The Node.js `IncomingMessage` has no knowledge of this — it continues emitting events, and the `end` handler tries `controller.close()` on the now-errored controller.
+
+**Fix** (two parts):
+
+1. A `done` flag (hoisted to the `ReadableStream` constructor scope, not inside `start()`) guards `enqueue`, `close`, and `error` — only the first terminal event takes effect.
+
+2. A `cancel()` callback on the `ReadableStream` sets `done = true` and calls `res.destroy()` on the Node.js stream, ensuring no further events fire after the consumer cancels.
+
+**Lesson**: When bridging Node.js streams to Web Streams API, you must handle termination from *both* sides. The producer (Node.js `IncomingMessage`) can end/error, and the consumer (browser `ReadableStream` reader) can cancel. The `cancel()` callback is the Web Streams mechanism for the consumer to signal it's done — omitting it leaves the producer running and its events hitting a dead controller.
+
+**Lesson**: The first fix (adding the `done` flag inside `start()`) was necessary but not sufficient. The flag only guarded against Node.js emitting both `error` and `end`, not against consumer-side cancellation. The `cancel()` callback was the missing piece. When debugging stream lifecycle bugs, enumerate *all* paths that can terminate the stream, not just the producer-side ones.
+
 ## Known limitations / future work
 
 - No fallback modal for when CM6 view is unavailable (e.g., reading mode). The question bar simply won't appear.

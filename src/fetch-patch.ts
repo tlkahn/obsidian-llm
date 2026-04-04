@@ -109,13 +109,22 @@ function nodeFetch(args: {
                     }
                 }
 
+                let done = false;
                 const stream = new ReadableStream({
                     start(controller) {
                         res.on("data", (chunk: Buffer) => {
-                            controller.enqueue(new Uint8Array(chunk));
+                            if (!done) controller.enqueue(new Uint8Array(chunk));
                         });
-                        res.on("end", () => controller.close());
-                        res.on("error", (err: Error) => controller.error(err));
+                        res.on("end", () => {
+                            if (!done) { done = true; controller.close(); }
+                        });
+                        res.on("error", (err: Error) => {
+                            if (!done) { done = true; controller.error(err); }
+                        });
+                    },
+                    cancel() {
+                        done = true;
+                        res.destroy();
                     },
                 });
 

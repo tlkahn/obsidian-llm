@@ -177,7 +177,7 @@ npm run build
 
 ### Technical notes
 
-**CORS and Anthropic**: The WASM module uses browser `fetch()` internally (via reqwest compiled to WASM). OpenAI's API sends CORS headers; Anthropic's does not. The plugin patches `globalThis.fetch` to detect Anthropic requests (by the `x-api-key` header) and routes them through Node.js `https`, which is available in Obsidian's Electron context and not subject to CORS. Streaming is preserved. See `src/fetch-patch.ts` and `doc/implementation.md` (Phase 13) for details.
+**CORS and Anthropic**: The WASM module uses browser `fetch()` internally (via reqwest compiled to WASM). OpenAI's API sends CORS headers; Anthropic's does not. The plugin patches `globalThis.fetch` to detect Anthropic requests (by the `x-api-key` header) and routes them through Node.js `https`, which is available in Obsidian's Electron context and not subject to CORS. Streaming is preserved — the Node.js `IncomingMessage` is wrapped in a `ReadableStream` with lifecycle guards to handle both producer-side errors and consumer-side cancellation cleanly. See `src/fetch-patch.ts` and `doc/implementation.md` (Phases 13 and 15) for details.
 
 **Settings migration**: Users upgrading from v0.1.0 (single API key) to v0.2.0 (per-provider keys) get automatic migration — the old `apiKey` and `baseUrl` fields are copied to `openaiApiKey` and `openaiBaseUrl`, then the legacy fields are removed.
 
