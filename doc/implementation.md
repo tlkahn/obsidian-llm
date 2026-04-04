@@ -167,7 +167,7 @@ All commands check for API key presence and show a `Notice` on error.
 
 ## Test inventory
 
-46 tests across 6 test files (vitest):
+57 tests across 7 test files (vitest):
 
 | File | Tests | What's covered |
 |------|-------|----------------|
@@ -177,6 +177,40 @@ All commands check for API key presence and show a `Notice` on error.
 | bridge.test.ts | 6 | Uninit throw, concurrent reject, options JSON passthrough, chunk callback, error recovery |
 | config.test.ts | 5 | Default model, temperature, apiKey, baseUrl, systemPrompt |
 | response-inserter.test.ts | 15 | Template replacement (4), StreamingTemplateReplacer (5), TranslationInserter: header format with multi-paragraph underscores, bare `p` for single paragraph, streaming chunks, finalize close, full round-trip output, surrounding text preservation (6) |
+| heading-context.test.ts | 11 | No headings, selection before headings, single/nested/deep ancestors, sibling exclusion, exact-offset boundary, cross-section ranges, cross-parent ranges, level gaps, same-section identity |
+
+### Phase 11: Heading breadcrumb context for translation
+
+The Translate command's system prompt was bare — no document structure context. For domain-specific texts (philosophy, technical manuals), knowing *where* in the document the text sits helps the LLM make better lexical choices.
+
+**New module: `heading-context.ts`** — pure function `buildHeadingBreadcrumb(headings, startOffset, endOffset)`:
+
+1. `ancestorChain(headings, offset)` builds a heading stack at a given offset: walks the sorted heading list maintaining a stack (when heading level N is encountered, pop everything >= N, then push). Result is the ancestor chain from root to leaf.
+2. Computes ancestor chains for both selection start and end.
+3. Finds the longest common prefix. If chains are identical, formats as `# Title > ## Chapter > ### Section`. If they diverge at position *i*, appends a range: `### Section 2.2 … ### Section 2.4`.
+
+**Integration in `handleTranslate()`**: After resolving the selection range, fetches `app.metadataCache.getFileCache(file).headings`, maps to the `Heading` interface, calls `buildHeadingBreadcrumb()`, and appends a context hint to the system prompt:
+
+```
+Translate the following text to English. Output only the translation, no commentary.
+The text appears in: MyNote: # Main Title > ## Chapter 2 > ### Section 2.2.
+```
+
+Falls back to just the filename if the file has no headings, and omits the hint entirely if there's no active file.
+
+**Tests**: 11 new test cases in `heading-context.test.ts` covering: no headings, selection before all headings, single/nested/deep ancestor chains, sibling exclusion, exact-offset boundary, cross-section ranges, cross-parent ranges, and level gaps.
+
+### Phase 12: Prompt logging (GitHub issue #1)
+
+Added `console.debug` logging before each `bridge.promptStreaming()` call to make the full prompt payload inspectable in Obsidian's developer console (Ctrl/Cmd+Shift+I). All logs use the `[LLM]` prefix, matching the existing error logging convention.
+
+| Command | Log key | Payload |
+|---------|---------|---------|
+| Ask Question | `[LLM] Ask Question prompt:` | `{ prompt, systemPrompt, options }` |
+| Process Templates | `[LLM] Process Template prompt:` | `{ instruction, prompt, systemPrompt, options }` |
+| Translate | `[LLM] Translate prompt:` | `{ sourceText, systemPrompt, options }` |
+
+Uses `console.debug` (not `console.log`) so messages are hidden by default unless the console filter includes debug-level output.
 
 ## Known limitations / future work
 

@@ -67,6 +67,14 @@ The comment block is invisible in Obsidian's reading/preview mode, keeping your 
 
 The target language defaults to English and can be changed in settings.
 
+**Heading context**: The Translate command automatically includes the document's heading hierarchy in the prompt to improve translation quality. For example, if your cursor is inside a subsection, the LLM receives context like:
+
+```
+The text appears in: MyNote: # Philosophy > ## Chapter 2 > ### The Education of the Philosopher
+```
+
+This helps the LLM make better lexical choices for domain-specific terminology. If the selection spans multiple sections, a range is shown (e.g. `### Section 2.2 … ### Section 2.4`).
+
 ## Setup
 
 ### Prerequisites
@@ -106,12 +114,16 @@ Open Settings > LLM and configure:
 
 The plugin works with any OpenAI-compatible API. Set the **Base URL** to use providers like Ollama, Together, or Azure OpenAI.
 
+### Debugging
+
+All three commands log the full prompt payload to Obsidian's developer console before each LLM call. Open the console with **Ctrl/Cmd+Shift+I** and filter for `[LLM]` to inspect the exact prompt, system prompt, and options being sent.
+
 ## Development
 
 ```bash
 npm install
 npm run dev          # esbuild watch mode
-npm test             # run 46 tests
+npm test             # run 57 tests
 npm run test:watch   # vitest watch mode
 npm run build        # production build (tsc + esbuild)
 ```
@@ -127,6 +139,7 @@ src/
   template-parser.ts   Find {{llm: ...}} blocks in markdown
   context-extractor.ts Extract surrounding paragraphs for context
   prompt-formatter.ts  Assemble prompt from question + context + metadata
+  heading-context.ts   Build heading breadcrumb from document structure
   question-bar.ts      CodeMirror 6 panel for question input
   response-inserter.ts Streaming response insertion (callouts, templates, translation)
   __tests__/           Test files (vitest)

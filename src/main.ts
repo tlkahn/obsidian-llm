@@ -16,6 +16,7 @@ import { formatLlmPrompt } from "./prompt-formatter";
 import { parseTemplates } from "./template-parser";
 import { extractContext } from "./context-extractor";
 import { CalloutInserter, StreamingTemplateReplacer, TranslationInserter } from "./response-inserter";
+import { buildHeadingBreadcrumb } from "./heading-context";
 
 export default class LlmPlugin extends Plugin {
     settings: PluginSettings = DEFAULT_SETTINGS;
@@ -137,6 +138,8 @@ export default class LlmPlugin extends Plugin {
         const cursor = editor.getCursor("to");
         const inserter = new CalloutInserter(editor, cursor.line);
 
+        console.debug("[LLM] Ask Question prompt:", { prompt, systemPrompt, options });
+
         try {
             await this.bridge.promptStreaming(prompt, systemPrompt, options, (chunk: string) => {
                 inserter.appendChunk(chunk);
@@ -176,6 +179,8 @@ export default class LlmPlugin extends Plugin {
                 context: ctx.text || undefined,
                 filePath: this.app.workspace.getActiveFile()?.path,
             });
+
+            console.debug("[LLM] Process Template prompt:", { instruction: tmpl.instruction, prompt, systemPrompt, options });
 
             try {
                 const replacer = new StreamingTemplateReplacer(editor, tmpl.charStart, tmpl.charEnd);
@@ -220,15 +225,18 @@ export default class LlmPlugin extends Plugin {
         let sourceText: string;
         let afterOffset: number;
 
+        let startOffset: number;
         const selection = editor.getSelection();
         if (selection) {
             sourceText = selection;
+            startOffset = editor.posToOffset(editor.getCursor("from"));
             afterOffset = editor.posToOffset(editor.getCursor("to"));
         } else {
             const content = editor.getValue();
             const cursorOffset = editor.posToOffset(editor.getCursor());
             const bounds = this.findParagraphBounds(content, cursorOffset);
             sourceText = content.slice(bounds.start, bounds.end);
+            startOffset = bounds.start;
             afterOffset = bounds.end;
         }
 
@@ -240,10 +248,33 @@ export default class LlmPlugin extends Plugin {
         const paragraphCount = sourceText.split("\n\n").filter((s) => s.trim()).length;
         const date = new Date().toISOString().slice(0, 10);
         const targetLang = this.settings.translationLanguage || "English";
-        const systemPrompt = `Translate the following text to ${targetLang}. Output only the translation, no commentary.`;
+
+        let contextHint = "";
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+            const cache = this.app.metadataCache.getFileCache(file);
+            if (cache?.headings) {
+                const headings = cache.headings.map((h) => ({
+                    level: h.level,
+                    text: h.heading,
+                    offset: h.position.start.offset,
+                }));
+                const breadcrumb = buildHeadingBreadcrumb(headings, startOffset, afterOffset);
+                const parts: string[] = [];
+                if (file.basename) parts.push(file.basename);
+                if (breadcrumb) parts.push(breadcrumb);
+                if (parts.length) contextHint = `\nThe text appears in: ${parts.join(": ")}.`;
+            } else if (file.basename) {
+                contextHint = `\nThe text appears in: ${file.basename}.`;
+            }
+        }
+
+        const systemPrompt = `Translate the following text to ${targetLang}. Output only the translation, no commentary.${contextHint}`;
         const options: Record<string, unknown> = {
             temperature: this.settings.temperature,
         };
+
+        console.debug("[LLM] Translate prompt:", { sourceText, systemPrompt, options });
 
         const inserter = new TranslationInserter(editor, afterOffset, paragraphCount, date);
 

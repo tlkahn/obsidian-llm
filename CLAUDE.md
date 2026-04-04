@@ -13,9 +13,10 @@ src/
   template-parser.ts   Pure fn: find {{llm: ...}} blocks, skip code fences
   context-extractor.ts Pure fn: extract surrounding paragraphs, exclude template text
   prompt-formatter.ts  Pure fn: question + context + filePath → prompt string
+  heading-context.ts   Pure fn: build heading breadcrumb from metadataCache headings + selection range
   question-bar.ts      CM6 panel for question input (Cmd/Ctrl+Enter submit, Esc cancel)
   response-inserter.ts CalloutInserter (Ask Question) + StreamingTemplateReplacer (templates) + TranslationInserter (translate) + replaceTemplateBlock (non-streaming fallback)
-  __tests__/           6 test files, 46 tests total
+  __tests__/           7 test files, 57 tests total
 styles.css             Question bar + streaming indicator CSS
 install.sh             Build + deploy to Obsidian vault
 doc/implementation.md  Build history and design decisions
@@ -26,7 +27,7 @@ doc/implementation.md  Build history and design decisions
 ```bash
 npm run build          # tsc + esbuild → main.js
 npm run dev            # esbuild watch mode
-npm test               # vitest run (46 tests)
+npm test               # vitest run (57 tests)
 npm run test:watch     # vitest watch mode
 ./install.sh [vault]   # build + test + install to vault (default: ~/Documents/Ekuro)
 ```
@@ -44,6 +45,8 @@ npm run test:watch     # vitest watch mode
 - **Concurrency guard**: `WasmBridge.isProcessing` prevents overlapping streaming requests (single HTTP connection in the WASM client).
 - **Template processing**: Reverse document order to preserve char offsets when replacing blocks with different-length text. `StreamingTemplateReplacer` streams responses live (same UX as Ask Question callout).
 - **Translation output**: `TranslationInserter` appends an HTML comment block (`<!-- tr ... -->`) after the source text. Streams live like other inserters. Uses bare `p` for single paragraphs, `p__` etc. for multi-paragraph selections.
+- **Heading breadcrumb**: `heading-context.ts` builds a breadcrumb from `app.metadataCache` headings (e.g. `# Title > ## Ch2 > ### Sec 2.2`). Used by Translate to give the LLM document-structure context. Handles cross-section selections with range notation (`### 2.2 … ### 2.4`).
+- **Prompt logging**: All three commands log the full prompt payload to the developer console via `console.debug("[LLM] ...")` before each LLM call.
 
 ## Plugin commands
 
@@ -51,7 +54,7 @@ npm run test:watch     # vitest watch mode
 |---------|----|----------|
 | Ask Question | `llm-prompt` | Shows question bar → formats prompt (question + selection + file path) → streams response into `> [!llm]+ Response` callout |
 | Process Templates | `llm-process-templates` | Finds all `{{llm: instruction}}` blocks → extracts surrounding context → calls LLM → streams response live into each block position |
-| Translate | `llm-translate` | Translates selection (or current paragraph) → streams translation into `<!-- tr ... -->` HTML comment block after source text |
+| Translate | `llm-translate` | Translates selection (or current paragraph) → streams translation into `<!-- tr ... -->` HTML comment block after source text. System prompt includes heading breadcrumb context from `metadataCache`. |
 
 ## Settings (DEFAULT_SETTINGS)
 
@@ -66,7 +69,7 @@ npm run test:watch     # vitest watch mode
 
 ## Testing
 
-46 vitest tests across 6 files. Pure functions (template-parser, context-extractor, prompt-formatter, config) tested directly. Bridge tested with mocked WASM module via `Object.defineProperty` on private fields. Response inserter tested with a mock Editor object (`replaceTemplateBlock`, `StreamingTemplateReplacer`, and `TranslationInserter`). Question bar and main.ts are tested manually in Obsidian.
+57 vitest tests across 7 files. Pure functions (template-parser, context-extractor, prompt-formatter, heading-context, config) tested directly. Bridge tested with mocked WASM module via `Object.defineProperty` on private fields. Response inserter tested with a mock Editor object (`replaceTemplateBlock`, `StreamingTemplateReplacer`, and `TranslationInserter`). Question bar and main.ts are tested manually in Obsidian.
 
 ## Key files in other repos
 
