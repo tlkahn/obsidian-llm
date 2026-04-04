@@ -13,14 +13,14 @@ describe("extractContext", () => {
         expect(result.text).not.toContain("{{llm:");
     });
 
-    it("includes surrounding paragraphs (default 2)", () => {
+    it("includes surrounding paragraphs (default 1)", () => {
         const content = "P1.\n\nP2.\n\nP3 target.\n\nP4.\n\nP5.";
         // P3 starts at 10
         const result = extractContext(content, 10, 20);
-        expect(result.text).toContain("P1.");
         expect(result.text).toContain("P2.");
         expect(result.text).toContain("P4.");
-        expect(result.text).toContain("P5.");
+        expect(result.text).not.toContain("P1.");
+        expect(result.text).not.toContain("P5.");
     });
 
     it("handles start of document", () => {
@@ -34,7 +34,7 @@ describe("extractContext", () => {
         const content = "First para.\n\nSecond para.\n\nLast para target.";
         const targetStart = content.indexOf("Last para target.");
         const result = extractContext(content, targetStart, content.length);
-        expect(result.text).toContain("First para.");
+        expect(result.text).not.toContain("First para.");
         expect(result.text).toContain("Second para.");
     });
 

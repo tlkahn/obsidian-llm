@@ -16,7 +16,7 @@ src/
   fetch-patch.ts       Patches globalThis.fetch to bypass CORS for Anthropic API
                        (routes via Node.js https, preserves streaming)
   template-parser.ts   Pure fn: find {{llm: ...}} blocks, skip code fences
-  context-extractor.ts Pure fn: extract surrounding paragraphs, exclude template text
+  context-extractor.ts Pure fn: extract surrounding paragraphs (default 1), exclude template text
   prompt-formatter.ts  Pure fn: question + context + filePath → prompt string
   heading-context.ts   Pure fn: build heading breadcrumb from metadataCache headings + selection range
   question-bar.ts      CM6 panel for question input (Cmd/Ctrl+Enter submit, Esc cancel)
@@ -51,7 +51,7 @@ npm run test:watch     # vitest watch mode
 - **WASM bridge pattern**: Same as obsidian-annotation and turboref — `FileSystemAdapter.readBinary()` loads the `.wasm` binary, `initSync({ module })` initializes the WASM module, then construct `LlmClient` via provider-routed constructors.
 - **Question bar**: CM6 `showPanel` + `Compartment` lifecycle (adapted from obsidian-llm-helper). CSS prefix: `llm-prompt-bar`.
 - **Concurrency guard**: `WasmBridge.isProcessing` prevents overlapping streaming requests (single HTTP connection in the WASM client).
-- **Template processing**: Reverse document order to preserve char offsets when replacing blocks with different-length text. `StreamingTemplateReplacer` streams responses live (same UX as Ask Question callout).
+- **Template processing**: Reverse document order to preserve char offsets when replacing blocks with different-length text. `StreamingTemplateReplacer` streams responses live (same UX as Ask Question callout). Context window is 1 surrounding paragraph by default (configurable via `surrounding` parameter).
 - **Translation output**: `TranslationInserter` appends an HTML comment block (`<!-- tr ... -->`) after the source text. Streams live like other inserters. Uses bare `p` for single paragraphs, `p__` etc. for multi-paragraph selections.
 - **Heading breadcrumb**: `heading-context.ts` builds a breadcrumb from `app.metadataCache` headings (e.g. `# Title > ## Ch2 > ### Sec 2.2`). Used by Translate to give the LLM document-structure context. Handles cross-section selections with range notation (`### 2.2 … ### 2.4`).
 - **Prompt logging**: All three commands log the full prompt payload to the developer console via `console.debug("[LLM] ...")` before each LLM call.

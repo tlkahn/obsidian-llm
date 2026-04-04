@@ -39,7 +39,7 @@ Some more notes here...
 {{llm: suggest three follow-up questions based on this section}}
 ```
 
-Then run **LLM: Process Templates** from the command palette. Each template block is replaced live as the LLM responds — you see text streaming in, just like the Ask Question callout. Surrounding text is used as context.
+Then run **LLM: Process Templates** from the command palette. Each template block is replaced live as the LLM responds — you see text streaming in, just like the Ask Question callout. The immediately surrounding paragraphs (1 before, 1 after) are included as context for the LLM.
 
 Templates inside fenced code blocks are ignored.
 

@@ -43,7 +43,7 @@ Three modules with no Obsidian dependencies, fully testable in vitest:
 
 **template-parser.ts** — Finds `{{llm: instruction}}` blocks in markdown. Returns `TemplateBlock[]` with instruction text, char offsets, and full match string. Skips templates inside fenced code blocks (scans for ` ``` ` boundaries first, filters matches inside them).
 
-**context-extractor.ts** — Given a document and a target range (the template block), splits on `\n\n` into paragraphs, finds the paragraph containing the target, expands by N surrounding paragraphs (default 2), and splices out the template block text itself. Returns `ContextResult` with the extracted text and char boundaries.
+**context-extractor.ts** — Given a document and a target range (the template block), splits on `\n\n` into paragraphs, finds the paragraph containing the target, expands by N surrounding paragraphs (default 1), and splices out the template block text itself. Returns `ContextResult` with the extracted text and char boundaries.
 
 **prompt-formatter.ts** — Assembles a prompt string from `{ question, context?, filePath? }`. Order: file path metadata line, context block, question. Trims whitespace.
 
@@ -301,6 +301,16 @@ Replaced single API key / base URL inputs with three sections:
 | response-inserter.test.ts | 15 | Template replacement (4), StreamingTemplateReplacer (5), TranslationInserter (6) |
 | heading-context.test.ts | 11 | No headings, selection before headings, single/nested/deep ancestors, sibling exclusion, exact-offset boundary, cross-section ranges |
 | fetch-patch.test.ts | 8 | hasXApiKeyHeader: plain object, case-insensitive, Headers instance, array, Request object, Authorization-only (false), no headers (false), URL object (false) |
+
+### Phase 14: Narrow default context window (surrounding 2 → 1)
+
+Changed `extractContext`'s default `surrounding` parameter from 2 to 1, so template processing includes only the immediately adjacent paragraphs (1 before, 1 after the target) instead of 2 in each direction. The wider window was pulling in too much irrelevant text for typical use.
+
+**Code change**: One-line default parameter change in `context-extractor.ts:11`.
+
+**Test cascading**: The primary test rename ("default 2" → "default 1") was straightforward, but the "handles end of document" test also broke. That test had a 3-paragraph document (`First para. / Second para. / Last para target.`) and asserted both "First para." and "Second para." were present. With `surrounding=2`, the window reached back 2 paragraphs to include "First para." — but with `surrounding=1`, only the immediately adjacent "Second para." is reachable. The test was implicitly coupled to the default window size rather than testing end-of-document boundary behavior specifically. Fixed by changing the "First para." assertion from `toContain` to `not.toContain`.
+
+**Lesson**: Tests that assert on content reachability in context-extraction are sensitive to the default window size, even when they appear to be testing a different concern (boundary handling). When changing defaults, check all tests that rely on the default path — not just the ones whose names reference the default value.
 
 ## Known limitations / future work
 

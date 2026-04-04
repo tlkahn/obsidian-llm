@@ -8,7 +8,7 @@ export function extractContext(
     content: string,
     targetStart: number,
     targetEnd: number,
-    surrounding = 2
+    surrounding = 1
 ): ContextResult {
     // Split into paragraphs by double newline
     const paragraphs: Array<{ text: string; start: number; end: number }> = [];
